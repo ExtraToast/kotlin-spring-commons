@@ -7,6 +7,7 @@ plugins {
 
 dependencies {
     implementation(libs.jackson.module.kotlin)
+    implementation(libs.jackson.datatype.jsr310)
     compileOnly(libs.spring.boot.autoconfigure)
     compileOnly(libs.spring.context)
     compileOnly(libs.spring.vault.core)

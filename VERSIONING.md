@@ -26,7 +26,7 @@ SemVer: pre-1.0 (`0.y.z`) treats minor as the breaking lever
   [versions]
   extratoast-kotlin-commons = "0.3.1"
   [libraries]
-  extratoast-command = { module = "dev.extratoast.kotlin-commons:command", version.ref = "extratoast-kotlin-commons" }
+  extratoast-command = { module = "dev.extratoast:kotlin-commons-command", version.ref = "extratoast-kotlin-commons" }
   ```
 - **npm**: pin exact versions in the manifest (no `^`/`~`).
 - **GitHub Actions / reusable workflows**: pin to a release tag (and digest via
