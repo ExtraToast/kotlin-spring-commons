@@ -1,0 +1,2 @@
+com.jorisjonkers.personalstack.common.observability.ActuatorObservationFilterAutoConfiguration
+com.jorisjonkers.personalstack.common.observability.ApplicationTracingAspectAutoConfiguration
