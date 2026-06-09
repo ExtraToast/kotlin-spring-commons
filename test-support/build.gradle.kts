@@ -25,15 +25,21 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
+// These system-test fixtures require real external infrastructure to execute:
+// PlaywrightSystemTestBase launches a browser, and StalwartMailClient opens an
+// IMAP connection. Keep pure helper classes covered by direct unit tests.
+val environmentBoundCoverageExcludes =
+    listOf(
+        "**/PlaywrightSystemTestBase*",
+        "**/StalwartMailClient*",
+    )
+
 tasks.named<JacocoReport>("jacocoTestReport") {
     classDirectories.setFrom(
         files(
             classDirectories.files.map {
                 fileTree(it) {
-                    exclude(
-                        "**/PlaywrightSystemTestBase*",
-                        "**/StalwartMailClient*",
-                    )
+                    exclude(environmentBoundCoverageExcludes)
                 }
             },
         ),
@@ -45,10 +51,7 @@ tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
         files(
             classDirectories.files.map {
                 fileTree(it) {
-                    exclude(
-                        "**/PlaywrightSystemTestBase*",
-                        "**/StalwartMailClient*",
-                    )
+                    exclude(environmentBoundCoverageExcludes)
                 }
             },
         ),

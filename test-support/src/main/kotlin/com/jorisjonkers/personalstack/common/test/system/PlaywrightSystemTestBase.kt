@@ -63,6 +63,20 @@ abstract class PlaywrightSystemTestBase {
         attempts: Int = 3,
         navigate: () -> Unit,
     ) {
+        PlaywrightNavigationRetries.retryOnConnectionRefused(attempts, navigate = navigate)
+    }
+
+    companion object {
+        const val DEFAULT_TIMEOUT_MS: Double = 30_000.0
+    }
+}
+
+internal object PlaywrightNavigationRetries {
+    fun retryOnConnectionRefused(
+        attempts: Int = 3,
+        delayMillis: Long = 2_000,
+        navigate: () -> Unit,
+    ) {
         var lastException: PlaywrightException? = null
         repeat(attempts) { attempt ->
             try {
@@ -73,15 +87,11 @@ abstract class PlaywrightSystemTestBase {
                     throw ex
                 }
                 lastException = ex
-                if (attempt < attempts - 1) {
-                    Thread.sleep(2_000L * (attempt + 1))
+                if (attempt < attempts - 1 && delayMillis > 0) {
+                    Thread.sleep(delayMillis * (attempt + 1))
                 }
             }
         }
         throw lastException ?: IllegalStateException("navigation failed without an exception")
-    }
-
-    companion object {
-        const val DEFAULT_TIMEOUT_MS: Double = 30_000.0
     }
 }
