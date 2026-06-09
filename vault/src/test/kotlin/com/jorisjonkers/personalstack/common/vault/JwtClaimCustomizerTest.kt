@@ -8,7 +8,6 @@ import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm
 import org.springframework.security.oauth2.jwt.JwsHeader
 import org.springframework.security.oauth2.jwt.JwtClaimsSet
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType
-import org.springframework.security.oauth2.server.authorization.client.RegisteredClient
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext
 
 class JwtClaimCustomizerTest {
@@ -24,16 +23,20 @@ class JwtClaimCustomizerTest {
                 ),
             )
         val registeredClient =
-            RegisteredClient
-                .withId("id")
-                .clientId("client-a")
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .redirectUri("https://example.test/callback")
-                .scope("openid")
-                .build()
+            RegisteredClientFactory.build(
+                RegisteredOAuth2Client(
+                    id = "id",
+                    clientId = "client-a",
+                    redirectUris = setOf("https://example.test/callback"),
+                    scopes = setOf("openid"),
+                ),
+            )
         val context =
             JwtEncodingContext
-                .with(JwsHeader.with(SignatureAlgorithm.RS256), JwtClaimsSet.builder())
+                .with(
+                    JwsHeader.with(SignatureAlgorithm.RS256),
+                    JwtClaimsSet.builder().subject("alice"),
+                )
                 .registeredClient(registeredClient)
                 .principal(TestingAuthenticationToken("alice", "n/a"))
                 .tokenType(OAuth2TokenType.ACCESS_TOKEN)
