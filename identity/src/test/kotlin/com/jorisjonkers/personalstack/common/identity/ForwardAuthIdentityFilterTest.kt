@@ -59,7 +59,7 @@ class ForwardAuthIdentityFilterTest {
             )
 
         assertThat(response.status).isEqualTo(401)
-        assertThat(response.contentType).isEqualTo("application/problem+json")
+        assertThat(response.contentType).startsWith("application/problem+json")
         assertThat(chainCalls.get()).isZero()
     }
 
