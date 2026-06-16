@@ -2,6 +2,7 @@ package com.jorisjonkers.personalstack.common.identity
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import jakarta.servlet.FilterChain
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -114,6 +115,7 @@ class ForwardAuthIdentityFilterTest {
 
         assertThat(response.status).isEqualTo(200)
         assertThat(chainCalls.get()).isEqualTo(1)
+        verify(exactly = 0) { jwtDecoder.decode(any()) }
     }
 
     @Test
@@ -135,6 +137,112 @@ class ForwardAuthIdentityFilterTest {
         assertThat(chainCalls.get()).isEqualTo(1)
         assertThat(lastPrincipal?.credentialSource).isEqualTo(CredentialSource.AUTHORIZATION_BEARER)
         assertThat(lastPrincipal?.username).isNull()
+    }
+
+    @Test
+    fun `edge header is preferred over authorization bearer when both are present`() {
+        val jwtDecoder = mockk<JwtDecoder>()
+        val filter = ForwardAuthIdentityFilter(ForwardAuthIdentityProperties(), jwtDecoder)
+        val chainCalls = AtomicInteger()
+        every { jwtDecoder.decode("edge-token") } returns jwt()
+
+        val response =
+            invoke(
+                filter = filter,
+                path = "/api/v1/widgets",
+                chainCalls = chainCalls,
+                headers =
+                    mapOf(
+                        "X-Agents-Verified-Jwt" to "edge-token",
+                        "Authorization" to "Bearer bearer-token",
+                    ),
+            )
+
+        assertThat(response.status).isEqualTo(200)
+        assertThat(chainCalls.get()).isEqualTo(1)
+        assertThat(lastPrincipal?.credentialSource).isEqualTo(CredentialSource.EDGE_ASSERTION)
+        verify(exactly = 1) { jwtDecoder.decode("edge-token") }
+        verify(exactly = 0) { jwtDecoder.decode("bearer-token") }
+    }
+
+    @Test
+    fun `authorization bearer is rejected when fallback is disabled`() {
+        val jwtDecoder = mockk<JwtDecoder>()
+        val filter =
+            ForwardAuthIdentityFilter(
+                ForwardAuthIdentityProperties(acceptAuthorizationBearer = false),
+                jwtDecoder,
+            )
+        val chainCalls = AtomicInteger()
+
+        val response =
+            invoke(
+                filter = filter,
+                path = "/api/v1/widgets",
+                chainCalls = chainCalls,
+                headers = mapOf("Authorization" to "Bearer native-token"),
+            )
+
+        assertThat(response.status).isEqualTo(401)
+        assertThat(chainCalls.get()).isZero()
+        verify(exactly = 0) { jwtDecoder.decode(any()) }
+    }
+
+    @Test
+    fun `roles claim as a single string maps to one role`() {
+        val jwtDecoder = mockk<JwtDecoder>()
+        val filter = ForwardAuthIdentityFilter(ForwardAuthIdentityProperties(), jwtDecoder)
+        val chainCalls = AtomicInteger()
+        every { jwtDecoder.decode("edge-token") } returns jwt(roles = "USER")
+
+        val response =
+            invoke(
+                filter = filter,
+                path = "/api/v1/widgets",
+                chainCalls = chainCalls,
+                headers = mapOf("X-Agents-Verified-Jwt" to "edge-token"),
+            )
+
+        assertThat(response.status).isEqualTo(200)
+        assertThat(lastPrincipal?.roles).containsExactly("USER")
+    }
+
+    @Test
+    fun `absent roles claim maps to an empty role set`() {
+        val jwtDecoder = mockk<JwtDecoder>()
+        val filter = ForwardAuthIdentityFilter(ForwardAuthIdentityProperties(), jwtDecoder)
+        val chainCalls = AtomicInteger()
+        every { jwtDecoder.decode("edge-token") } returns jwt(includeRoles = false)
+
+        val response =
+            invoke(
+                filter = filter,
+                path = "/api/v1/widgets",
+                chainCalls = chainCalls,
+                headers = mapOf("X-Agents-Verified-Jwt" to "edge-token"),
+            )
+
+        assertThat(response.status).isEqualTo(200)
+        assertThat(lastPrincipal?.roles).isEmpty()
+    }
+
+    @Test
+    fun `assertion without a subject returns unauthorized`() {
+        val jwtDecoder = mockk<JwtDecoder>()
+        val filter = ForwardAuthIdentityFilter(ForwardAuthIdentityProperties(), jwtDecoder)
+        val chainCalls = AtomicInteger()
+        every { jwtDecoder.decode("edge-token") } returns jwt(subject = null)
+
+        val response =
+            invoke(
+                filter = filter,
+                path = "/api/v1/widgets",
+                chainCalls = chainCalls,
+                headers = mapOf("X-Agents-Verified-Jwt" to "edge-token"),
+            )
+
+        assertThat(response.status).isEqualTo(401)
+        assertThat(chainCalls.get()).isZero()
     }
 
     private var lastPrincipal: ForwardAuthPrincipal? = null
@@ -162,12 +270,21 @@ class ForwardAuthIdentityFilterTest {
         return response
     }
 
-    private fun jwt(username: String? = "toast"): Jwt =
+    private fun jwt(
+        subject: String? = userId.toString(),
+        username: String? = "toast",
+        roles: Any = listOf("USER", "ADMIN"),
+        includeRoles: Boolean = true,
+    ): Jwt =
         Jwt
             .withTokenValue("token")
             .header("alg", "RS256")
-            .subject(userId.toString())
-            .claim("roles", listOf("USER", "ADMIN"))
+            .apply {
+                subject?.let { this.subject(it) }
+                if (includeRoles) {
+                    claim("roles", roles)
+                }
+            }
             .apply {
                 username?.let { claim("username", it) }
             }
