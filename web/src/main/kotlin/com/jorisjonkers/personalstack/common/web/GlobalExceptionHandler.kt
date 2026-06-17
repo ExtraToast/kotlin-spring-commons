@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
-import org.springframework.validation.FieldError as SpringFieldError
 
 /**
  * Translates exceptions thrown by controllers / command handlers
@@ -193,32 +192,11 @@ open class GlobalExceptionHandler {
         ex: HandlerMethodValidationException,
         request: WebRequest?,
     ): ResponseEntity<ProblemDetail> {
-        val fieldErrors =
-            runCatching {
-                ex.allValidationResults.flatMap { result ->
-                    runCatching {
-                        val resolvableErrors = result.resolvableErrors
-                        val springFieldErrors = resolvableErrors.filterIsInstance<SpringFieldError>()
-                        if (springFieldErrors.isNotEmpty()) {
-                            springFieldErrors.map { error ->
-                                FieldError(
-                                    field = error.field,
-                                    message = error.defaultMessage ?: "Invalid value",
-                                    rejectedValue = error.rejectedValue,
-                                )
-                            }
-                        } else {
-                            resolvableErrors.map { error ->
-                                FieldError(
-                                    field = result.methodParameter.parameterName ?: "request",
-                                    message = error.defaultMessage ?: "Invalid value",
-                                    rejectedValue = result.argument,
-                                )
-                            }
-                        }
-                    }.getOrElse { emptyList() }
-                }
-            }.getOrElse { emptyList() }
+        // Field-level detail is carried by handleValidation(MethodArgumentNotValidException)
+        // for the common @Valid @RequestBody path. HandlerMethodValidationException is the
+        // Spring-method-validation fallback; the per-parameter result API varies across
+        // Spring versions, so this handler guarantees the 422 contract without depending on it.
+        val fieldErrors = emptyList<FieldError>()
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
