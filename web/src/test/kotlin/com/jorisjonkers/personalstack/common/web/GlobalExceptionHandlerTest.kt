@@ -10,12 +10,16 @@ import jakarta.validation.Path
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.slf4j.MDC
+import org.springframework.core.MethodParameter
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.EmptyResultDataAccessException
 import org.springframework.http.HttpStatus
 import org.springframework.validation.BindingResult
+import org.springframework.validation.ObjectError
+import org.springframework.validation.method.ParameterValidationResult
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.context.request.WebRequest
+import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
 import org.springframework.validation.FieldError as SpringFieldError
 
@@ -165,6 +169,40 @@ class GlobalExceptionHandlerTest {
         assertThat(body.errors[1].field).isEqualTo("name")
         assertThat(body.errors[1].message).isEqualTo("Invalid value")
         assertThat(body.errors[1].rejectedValue).isNull()
+    }
+
+    @Test
+    fun `handleHandlerMethodValidation returns 422 with field errors and rejectedValue`() {
+        val fieldError = SpringFieldError("obj", "email", "bad", false, null, null, "must not be blank")
+        val fieldResult = mockk<ParameterValidationResult>()
+        every { fieldResult.resolvableErrors } returns listOf(fieldError)
+
+        val methodParameter = mockk<MethodParameter>()
+        every { methodParameter.parameterName } returns "name"
+        val fallbackError = ObjectError("obj", "must not be blank")
+        val fallbackResult = mockk<ParameterValidationResult>()
+        every { fallbackResult.resolvableErrors } returns listOf(fallbackError)
+        every { fallbackResult.methodParameter } returns methodParameter
+        every { fallbackResult.argument } returns ""
+
+        val ex = mockk<HandlerMethodValidationException>()
+        every { ex.allValidationResults } returns listOf(fieldResult, fallbackResult)
+
+        val response = handler.handleHandlerMethodValidation(ex, webRequest())
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY)
+        val body = response.body!!
+        assertThat(body.status).isEqualTo(422)
+        assertThat(body.title).isEqualTo("Validation Error")
+        assertThat(body.detail).isEqualTo("One or more fields failed validation")
+        assertThat(body.type).isEqualTo(URI.create("urn:problem-type:validation-error"))
+        assertThat(body.errors).hasSize(2)
+        assertThat(body.errors[0].field).isEqualTo("email")
+        assertThat(body.errors[0].message).isEqualTo("must not be blank")
+        assertThat(body.errors[0].rejectedValue).isEqualTo("bad")
+        assertThat(body.errors[1].field).isEqualTo("name")
+        assertThat(body.errors[1].message).isEqualTo("must not be blank")
+        assertThat(body.errors[1].rejectedValue).isEqualTo("")
     }
 
     @Test

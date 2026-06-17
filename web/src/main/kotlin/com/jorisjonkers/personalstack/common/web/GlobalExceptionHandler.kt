@@ -15,7 +15,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.WebRequest
+import org.springframework.web.method.annotation.HandlerMethodValidationException
 import java.net.URI
+import org.springframework.validation.FieldError as SpringFieldError
 
 /**
  * Translates exceptions thrown by controllers / command handlers
@@ -35,6 +37,7 @@ import java.net.URI
  *   valid but the system is in a state that can't service it
  *   (e.g. Vault not configured, repository feature disabled).
  * * `MethodArgumentNotValidException` /
+ *   `HandlerMethodValidationException` /
  *   `ConstraintViolationException` → 422 with a `violations`
  *   list carrying field-level (path, message, rejectedValue).
  * * `HttpMessageNotReadableException` /
@@ -172,6 +175,50 @@ open class GlobalExceptionHandler {
                     rejectedValue = error.rejectedValue,
                 )
             }
+        logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
+        val body =
+            problem(
+                type = ProblemTypes.named("validation-error"),
+                title = "Validation Error",
+                status = HttpStatus.UNPROCESSABLE_ENTITY,
+                detail = "One or more fields failed validation",
+                request = request,
+                errors = fieldErrors,
+            )
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body)
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException::class)
+    fun handleHandlerMethodValidation(
+        ex: HandlerMethodValidationException,
+        request: WebRequest?,
+    ): ResponseEntity<ProblemDetail> {
+        val fieldErrors =
+            runCatching {
+                ex.allValidationResults.flatMap { result ->
+                    runCatching {
+                        val resolvableErrors = result.resolvableErrors
+                        val springFieldErrors = resolvableErrors.filterIsInstance<SpringFieldError>()
+                        if (springFieldErrors.isNotEmpty()) {
+                            springFieldErrors.map { error ->
+                                FieldError(
+                                    field = error.field,
+                                    message = error.defaultMessage ?: "Invalid value",
+                                    rejectedValue = error.rejectedValue,
+                                )
+                            }
+                        } else {
+                            resolvableErrors.map { error ->
+                                FieldError(
+                                    field = result.methodParameter.parameterName ?: "request",
+                                    message = error.defaultMessage ?: "Invalid value",
+                                    rejectedValue = result.argument,
+                                )
+                            }
+                        }
+                    }.getOrElse { emptyList() }
+                }
+            }.getOrElse { emptyList() }
         logClientError(ex, request, HttpStatus.UNPROCESSABLE_ENTITY)
         val body =
             problem(
